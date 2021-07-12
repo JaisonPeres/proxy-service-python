@@ -1,0 +1,87 @@
+image: registry.gitlab.com/ziul/python-datascience:3.6-slim-jessie
+
+services:
+  - mongo
+
+stages:
+  - validate
+  - backup
+  - deploy
+
+
+variables:
+  MONGO_URI: 'mongodb://mongo/tests'
+  MONGO_DBNAME: 'tests'
+  SERVICE_NAME: $CI_PROJECT_NAME
+  # NAMESPACE: 'api'
+  # DEPLOYMENT: 'user'
+  KUBECONFIG: /etc/deploy/config
+
+# test_api:
+#   stage: validate
+#   image: python:3.6
+#   script:
+#    - pip install -r requirements.txt
+#    - coverage run --source=. -m unittest discover -s test
+#    - coverage report -m
+#   coverage: '/TOTAL.+ ([0-9]{1,3}%)/'
+
+lint_api:
+  stage: validate
+  image: python:alpine
+  script:
+   - pip install -r requirements.txt
+   - pip install pylint
+   - pylint *.py
+
+
+deploy_dev:
+  image: "registry.gitlab.com/ziul/public-images:kubectl"
+  stage: deploy
+  services:
+    - docker:dind
+  variables:
+    DOCKER_TAG: "latest"
+  before_script:
+    - echo ${kube_config} | base64 -d > ${KUBECONFIG}
+  script:
+    - docker login -u gitlab-ci-token -p $CI_JOB_TOKEN $CI_REGISTRY
+    - "docker build -t $CI_REGISTRY_IMAGE:$DOCKER_TAG --pull ."
+    - "docker push $CI_REGISTRY_IMAGE:$DOCKER_TAG"
+#     - kubectl patch deployments $DEPLOYMENT -p {\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"COMMIT_SHA\":\"$CI_COMMIT_SHORT_SHA\"}}}}} -n $NAMESPACE 
+  only:
+   - dev
+   - master
+#   environment:
+#     name: development
+#     url: https://api-dev.maquinadeaprovacao.com.br/user
+
+
+# # deploy_master:
+#   image: "docker:latest"
+#   stage: deploy
+#   services:
+#     - docker:dind
+#   variables:
+#     DOCKER_TAG: "master"
+#   script:
+#     - docker login -u gitlab-ci-token -p $CI_JOB_TOKEN $CI_REGISTRY
+#     - "docker build -t $CI_REGISTRY_IMAGE:$DOCKER_TAG --pull ."
+#     - "docker push $CI_REGISTRY_IMAGE:$DOCKER_TAG"
+#   only:
+#     - master
+
+# deploy_rollback:
+#   image: "docker:stable"
+#   stage: backup
+#   services:
+#     - docker:dind
+#   variables:
+#     DOCKER_TAG: "rollback"
+#   script:
+#     - docker login -u gitlab-ci-token -p $CI_JOB_TOKEN $CI_REGISTRY
+#     - docker pull $CI_REGISTRY_IMAGE:master
+#     - docker tag $CI_REGISTRY_IMAGE:master $CI_REGISTRY_IMAGE:$DOCKER_TAG
+#     - docker push $CI_REGISTRY_IMAGE:$DOCKER_TAG
+#   only:
+#     - master
